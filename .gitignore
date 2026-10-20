@@ -1,0 +1,11 @@
+.venv/
+.venv-linux/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+.env
+/analysis.txt
+*.egg-info/
+.copilot-azure/

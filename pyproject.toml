@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aca-sandbox-harness"
+version = "0.1.0"
+description = "A Python client for an Agent Framework harness inside an ACA Sandbox."
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "azure-containerapps-sandbox==0.1.0b4",
+    "azure-identity==1.26.0",
+    "pydantic>=2.12,<3",
+]
+
+[project.optional-dependencies]
+runtime = [
+    "agent-framework-core==1.21.0",
+    "agent-framework-openai==1.16.0",
+]
+setup = [
+    "azure-mgmt-resource>=24,<25",
+    "azure-mgmt-authorization>=4,<5",
+]
+
+[dependency-groups]
+dev = [
+    "build>=1.3,<2",
+    "pytest>=8,<10",
+    "pytest-asyncio>=1,<2",
+    "ruff>=0.14,<1",
+    "pyright>=1.1.400,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aca_sandbox_harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: opt-in tests that create and delete a real Azure sandbox"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pyright]
+include = ["src", "scripts", "examples", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.uv]
+prerelease = "if-necessary-or-explicit"
+
+[[tool.uv.index]]
+name = "microsoft"
+url = "https://packagefeedproxy.microsoft.io/pypi/simple"
+default = true
