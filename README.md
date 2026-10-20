@@ -60,9 +60,14 @@ uv run --env-file .env python examples\run_agent.py
 
 The example creates a sandbox, generates/runs a Python script, reconnects for a
 follow-up, downloads `analysis.txt`, and explicitly deletes the sandbox in
-`finally`. Downloads refuse to overwrite existing local files.
+`finally`. Pass `--suspend` to stop it instead and print its ID for a later
+reconnect. Downloads refuse to overwrite existing local files.
 Local paths in these instructions use PowerShell syntax; paths inside the
 Linux sandbox use POSIX syntax.
+
+```powershell
+uv run --env-file .env python examples\run_agent.py --suspend
+```
 
 For pip instead of uv, set `PIP_CONFIG_FILE` to the supplied `pip.ini` or pass
 `--index-url https://packagefeedproxy.microsoft.io/pypi/simple` explicitly.
@@ -97,6 +102,11 @@ with DefaultAzureCredential() as credential:
             sandbox.delete()
 ```
 
+Call `sandbox.suspend()` instead of `sandbox.delete()` to stop the sandbox and
+retain its conversation and workspace for `client.connect(sandbox_id)` later.
+Suspension waits until the sandbox is stopped; a failure is raised and does not
+fall back to deletion.
+
 `SandboxSettings` and `ModelSettings` can also be constructed directly.
 `SandboxSettings.from_env()` reads environment variables; it does not itself
 load `.env`. `uv run --env-file .env ...` loads that file.
@@ -106,6 +116,7 @@ load `.env`. `uv run --env-file .env ...` loads that file.
 | `client.create()` | Create and bootstrap once; return a sandbox handle |
 | `client.connect(sandbox_id)` | Resume/check the existing installation without resetting state |
 | `sandbox.run(prompt, timeout_seconds=300)` | Execute one bounded prompt; return a typed `RunResult` |
+| `sandbox.suspend()` | Stop and retain the sandbox for a later reconnect |
 | `sandbox.get_result(request_id)` | Retrieve a final result without executing again; `None` means none recorded |
 | `sandbox.upload_file(local_path, remote_path)` | Upload into the workspace using a relative remote path |
 | `sandbox.download_file(remote_path, local_path)` | Download a workspace artifact without overwriting |
@@ -168,6 +179,9 @@ wait for refresh or reauthenticate rather than forwarding refresh credentials.
   **not rolled back**. Corrupt/incompatible checkpoints fail explicitly.
 - Idle sandboxes auto-suspend after 10 minutes using disk mode. Operations
   check/resume them. There is no configured automatic deletion policy.
+- Explicitly stopped sandboxes retain their disk state and stop compute billing;
+  retained storage may continue to incur charges. Delete a sandbox when its
+  conversation and workspace are no longer needed.
 - Explicit deletion destroys sandbox conversation/workspace state. No volumes,
   user snapshots, or external state store are provisioned by this project.
   Closing Python is not cleanup: forgotten sandboxes and retained storage may

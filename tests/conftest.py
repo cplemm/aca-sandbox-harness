@@ -64,6 +64,8 @@ class FakeSandbox:
         self.on_run: Callable[[str], None] | None = None
         self.bootstrap_exit = 0
         self.deleted = False
+        self.stopped = False
+        self.stop_failure: Exception | None = None
         self.ready_calls = 0
         self.exec_failure: Exception | None = None
         self.cleanup_failure: Exception | None = None
@@ -129,6 +131,13 @@ class FakeSandbox:
 
     def ensure_running(self, *, timeout: int = 300) -> None:
         self.ready_calls += 1
+        self.stopped = False
+
+    def begin_stop(self, *, polling_timeout: int = 180) -> Poller:
+        if self.stop_failure is not None:
+            raise self.stop_failure
+        self.stopped = True
+        return Poller()
 
     def begin_delete(self, *, polling_timeout: int = 300) -> Poller:
         if self.deleted:

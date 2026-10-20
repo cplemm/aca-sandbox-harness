@@ -1,5 +1,6 @@
-"""Create a sandbox, run two prompts, download an artifact, and explicitly delete."""
+"""Create a sandbox, run prompts, download an artifact, and clean up its lifecycle."""
 
+import argparse
 from pathlib import Path
 
 from azure.identity import DefaultAzureCredential
@@ -14,7 +15,7 @@ def show(result: RunResult) -> None:
     print(result.text)
 
 
-def main() -> None:
+def main(*, suspend: bool = False) -> None:
     target = Path("analysis.txt")
     if target.exists():
         raise FileExistsError("Move analysis.txt before running; downloads never overwrite files.")
@@ -41,9 +42,19 @@ def main() -> None:
                 sandbox.download_file("analysis.txt", target)
                 print(f"Downloaded: {target.resolve()}")
             finally:
-                sandbox.delete()
-                print(f"Deleted sandbox: {sandbox.sandbox_id}")
+                if suspend:
+                    sandbox.suspend()
+                    print(f"Suspended sandbox: {sandbox.sandbox_id}")
+                else:
+                    sandbox.delete()
+                    print(f"Deleted sandbox: {sandbox.sandbox_id}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run the ACA sandbox harness example.")
+    parser.add_argument(
+        "--suspend",
+        action="store_true",
+        help="Suspend the sandbox after execution instead of deleting it.",
+    )
+    main(suspend=parser.parse_args().suspend)
