@@ -37,6 +37,41 @@ def test_create_connect_run_and_explicit_delete(fake_stack) -> None:
     assert remote.deleted
 
 
+def test_suspend_then_connect_preserves_sandbox_state(fake_stack, tmp_path: Path) -> None:
+    client, remote, _, _ = fake_stack
+    handle = client.create()
+    first = handle.run("Before suspension")
+    source = tmp_path / "workspace.txt"
+    source.write_text("preserved", encoding="utf-8")
+    handle.upload_file(source, "workspace.txt")
+    installation = remote.path(f"{ROOT}/installation.json").read_bytes()
+
+    handle.suspend()
+
+    assert remote.stopped
+    assert not remote.deleted
+    assert not list(remote.root.rglob("auth.json"))
+    assert remote.path("workspace/workspace.txt").read_text(encoding="utf-8") == "preserved"
+    assert remote.path(f"{ROOT}/installation.json").read_bytes() == installation
+
+    resumed = client.connect(handle.sandbox_id)
+    second = resumed.run("After resuming")
+    assert second.conversation_id == first.conversation_id
+    assert not remote.stopped
+    assert not remote.deleted
+
+
+def test_suspend_failure_does_not_delete_sandbox(fake_stack) -> None:
+    client, remote, _, _ = fake_stack
+    handle = client.create()
+    remote.stop_failure = ServiceRequestError("stop failed")
+
+    with pytest.raises(HarnessError, match="ACA operation failed"):
+        handle.suspend()
+
+    assert not remote.deleted
+
+
 @pytest.mark.parametrize(
     "prompt",
     [

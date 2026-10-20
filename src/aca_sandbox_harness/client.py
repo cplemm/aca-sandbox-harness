@@ -63,6 +63,7 @@ class SandboxIO(Protocol):
     def write_file(self, path: str, content: str | bytes, *, mode: str | None = None) -> None: ...
     def read_file(self, path: str) -> bytes: ...
     def delete_file(self, path: str) -> None: ...
+    def begin_stop(self, *, polling_timeout: int = 180) -> Waiter: ...
     def begin_delete(self, *, polling_timeout: int = 300) -> Waiter: ...
 
 
@@ -336,5 +337,12 @@ class HarnessSandbox:
             self._sandbox.begin_delete(polling_timeout=300).result(timeout=310)
         except ResourceNotFoundError:
             return
+        except AzureError as exc:
+            raise service_error(exc) from None
+
+    def suspend(self) -> None:
+        """Stop this sandbox while retaining its disk state for a later reconnect."""
+        try:
+            self._sandbox.begin_stop(polling_timeout=300).result(timeout=310)
         except AzureError as exc:
             raise service_error(exc) from None
