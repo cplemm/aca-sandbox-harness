@@ -8,10 +8,15 @@ import time
 import zipfile
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-from azure.containerapps.sandbox import SandboxGroupClient, endpoint_for_region
+from azure.containerapps.sandbox import (
+    SandboxGroupClient,
+    SandboxVolume,
+    Volume,
+    endpoint_for_region,
+)
 from azure.core.credentials import TokenCredential
 from azure.core.exceptions import (
     AzureError,
@@ -70,6 +75,15 @@ class SandboxIO(Protocol):
 class GroupIO(Protocol):
     def begin_create_sandbox(self, **kwargs: Any) -> Waiter: ...
     def get_sandbox_client(self, sandbox_id: str) -> SandboxIO: ...
+    def create_volume(
+        self,
+        name: str,
+        *,
+        type: Literal["AzureBlob", "DataDisk", "AzureBlobByo"] = "AzureBlob",
+        size: str | None = None,
+    ) -> Volume: ...
+    def get_volume(self, volume_name: str) -> Volume: ...
+    def begin_delete_volume(self, volume_name: str, **kwargs: Any) -> Waiter: ...
     def close(self) -> None: ...
 
 
@@ -123,7 +137,7 @@ class SandboxHarness:
             )
         )
 
-    def create(self) -> HarnessSandbox:
+    def create(self, *, volumes: list[SandboxVolume] | None = None) -> HarnessSandbox:
         try:
             sandbox = self.group.begin_create_sandbox(
                 disk=self.settings.public_image,
@@ -133,6 +147,7 @@ class SandboxHarness:
                 entrypoint=["/bin/sh"],
                 cmd=["-c", "sleep infinity"],
                 labels={"application": "aca-sandbox-harness"},
+                volumes=volumes,
             ).result(timeout=310)
         except AzureError as exc:
             raise service_error(exc) from None
@@ -153,6 +168,37 @@ class SandboxHarness:
                 raise
             raise BootstrapError(sandbox.sandbox_id) from None
         return handle
+
+    def create_volume(
+        self,
+        name: str,
+        *,
+        type: Literal["AzureBlob", "DataDisk", "AzureBlobByo"] = "AzureBlob",
+        size: str | None = None,
+    ) -> Volume:
+        """Create a group-scoped persistent volume; deletion is always explicit."""
+        try:
+            return self.group.create_volume(name, type=type, size=size)
+        except AzureError as exc:
+            raise service_error(exc) from None
+
+    def get_volume(self, volume_name: str) -> Volume:
+        """Read volume metadata without changing its lifecycle."""
+        try:
+            return self.group.get_volume(volume_name)
+        except AzureError as exc:
+            raise service_error(exc) from None
+
+    def delete_volume(self, volume_name: str) -> None:
+        """Delete a volume and wait for completion; mounted volumes cannot be deleted."""
+        try:
+            self.group.begin_delete_volume(volume_name, polling_timeout=300).result(timeout=310)
+        except AzureError as exc:
+            raise service_error(exc) from None
+        except TimeoutError:
+            raise HarnessError(
+                f"Timed out deleting volume {volume_name}; inspect the volume before retrying."
+            ) from None
 
     def connect(self, sandbox_id: str) -> HarnessSandbox:
         validate_id(sandbox_id)
@@ -297,7 +343,9 @@ class HarnessSandbox:
             result = self._sandbox.exec(f"{RUNNER} transfer {request.request_id}")
             if result.exit_code != 0:
                 raise HarnessError(
-                    "File transfer failed. Check the path, symlinks, file size, and active prompt."
+                    f"File transfer failed: direction={request.direction}, "
+                    f"sandbox={self.sandbox_id}, path={path!r}. "
+                    "Check the path, symlinks, file size, and active prompt."
                 )
             if self._sandbox.read_file(f"{directory}/complete") != b"complete":
                 raise HarnessError("File-transfer completion marker is invalid.")
