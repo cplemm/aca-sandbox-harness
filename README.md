@@ -114,7 +114,11 @@ load `.env`. `uv run --env-file .env ...` loads that file.
 | Method | Behavior |
 | --- | --- |
 | `client.create()` | Create and bootstrap once; return a sandbox handle |
+| `client.create(volumes=[...])` | Create and bootstrap with explicit group-scoped volume mounts |
 | `client.connect(sandbox_id)` | Resume/check the existing installation without resetting state |
+| `client.create_volume(name, type="AzureBlob")` | Create explicit persistent storage in the configured sandbox group |
+| `client.get_volume(name)` | Read persistent-volume metadata |
+| `client.delete_volume(name)` | Explicitly delete a volume and wait for completion |
 | `sandbox.run(prompt, timeout_seconds=300)` | Execute one bounded prompt; return a typed `RunResult` |
 | `sandbox.suspend()` | Stop and retain the sandbox for a later reconnect |
 | `sandbox.get_result(request_id)` | Retrieve a final result without executing again; `None` means none recorded |
@@ -122,6 +126,9 @@ load `.env`. `uv run --env-file .env ...` loads that file.
 | `sandbox.download_file(remote_path, local_path)` | Download a workspace artifact without overwriting |
 | `sandbox.delete()` | Wait for deletion of this sandbox only; already deleted is harmless |
 | `client.close()` | Release SDK resources, **not** delete sandboxes |
+
+Deleting a sandbox does not delete a group-scoped volume. Volumes are never
+created or deleted implicitly by `create()`, `delete()`, or `close()`.
 
 `RunResult` includes status, text, request/sandbox/conversation IDs, artifact
 metadata, and an explicit error for failed runs. A succeeded status means the
@@ -182,8 +189,8 @@ wait for refresh or reauthenticate rather than forwarding refresh credentials.
 - Explicitly stopped sandboxes retain their disk state and stop compute billing;
   retained storage may continue to incur charges. Delete a sandbox when its
   conversation and workspace are no longer needed.
-- Explicit deletion destroys sandbox conversation/workspace state. No volumes,
-  user snapshots, or external state store are provisioned by this project.
+- Explicit deletion destroys sandbox conversation/workspace state. The default
+  `client.create()` flow does not provision volumes or user snapshots.
   Closing Python is not cleanup: forgotten sandboxes and retained storage may
   still incur charges. Parent groups remain after sandbox deletion.
 
@@ -271,3 +278,12 @@ References: [ACA Sandboxes](https://learn.microsoft.com/azure/container-apps/san
 [Python Sandbox SDK](https://sandboxes.azure.com/docs/sandboxes/quickstart/setup-python-sdk),
 [Agent Harness](https://learn.microsoft.com/agent-framework/concepts/harness?pivots=programming-language-python),
 [Azure OpenAI Entra authentication](https://learn.microsoft.com/azure/ai-foundry/openai/how-to/managed-identity).
+
+## Manufacturing quality investigation demo
+
+The [synthetic manufacturing quality demo](examples/manufacturing_quality/README.md)
+generates fictional factory exports, runs an evidence-based investigation in the
+sandbox, and re-mounts the same persistent Data Disk in a second, distinct
+sandbox for follow-up. It demonstrates explicit volume creation, mounting,
+retention, and cleanup; `--suspend` retains both sandboxes and uses an Azure
+Blob volume instead. No real manufacturing data is used.

@@ -5,9 +5,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
+from azure.containerapps.sandbox import Volume
 from azure.core.credentials import AccessToken
 from azure.core.exceptions import ResourceNotFoundError
 
@@ -55,10 +56,9 @@ class Poller:
 
 
 class FakeSandbox:
-    sandbox_id = "test-sandbox"
-
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, sandbox_id: str = "test-sandbox") -> None:
         self.root = root
+        self.sandbox_id = sandbox_id
         self.commands: list[str] = []
         self.writes: list[tuple[str, bytes, str | None]] = []
         self.on_run: Callable[[str], None] | None = None
@@ -147,17 +147,45 @@ class FakeSandbox:
 
 
 class FakeGroup:
-    def __init__(self, sandbox: FakeSandbox) -> None:
+    def __init__(
+        self,
+        sandbox: FakeSandbox,
+        sandboxes: list[FakeSandbox] | None = None,
+    ) -> None:
         self.sandbox = sandbox
+        self.sandboxes = sandboxes or [sandbox]
+        self.created_index = 0
         self.created: list[dict[str, Any]] = []
+        self.volumes: dict[str, Volume] = {}
+        self.deleted_volumes: list[str] = []
 
     def begin_create_sandbox(self, **kwargs: Any) -> Poller:
         self.created.append(kwargs)
-        return Poller(self.sandbox)
+        sandbox = self.sandboxes[self.created_index]
+        self.created_index += 1
+        return Poller(sandbox)
 
     def get_sandbox_client(self, sandbox_id: str) -> FakeSandbox:
-        assert sandbox_id == self.sandbox.sandbox_id
-        return self.sandbox
+        return next(sandbox for sandbox in self.sandboxes if sandbox.sandbox_id == sandbox_id)
+
+    def create_volume(
+        self,
+        name: str,
+        *,
+        type: Literal["AzureBlob", "DataDisk", "AzureBlobByo"] = "AzureBlob",
+        size: str | None = None,
+    ) -> Volume:
+        volume = Volume(name=name, type=type, size=size)
+        self.volumes[name] = volume
+        return volume
+
+    def get_volume(self, volume_name: str) -> Volume:
+        return self.volumes[volume_name]
+
+    def begin_delete_volume(self, volume_name: str, **kwargs: Any) -> Poller:
+        self.deleted_volumes.append(volume_name)
+        del self.volumes[volume_name]
+        return Poller()
 
     def close(self) -> None:
         pass

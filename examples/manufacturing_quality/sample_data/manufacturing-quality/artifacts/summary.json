@@ -1,0 +1,62 @@
+{
+  "synthetic": true,
+  "data_window": [
+    "2026-08-24",
+    "2026-10-18"
+  ],
+  "joined_lots": 1512,
+  "target_segment": {
+    "line": "L3",
+    "shift": "Night",
+    "product_code": "P300",
+    "before_rate": 0.017380952380952382,
+    "during_rate": 0.10642857142857143,
+    "two_sided_p_value": 1.7431396055889067e-49
+  },
+  "top_segments_last_14_days": [
+    {
+      "line": "L3",
+      "shift": "Night",
+      "product_code": "P300",
+      "defects": 149,
+      "inspected_units": 1400,
+      "rate": 0.10642857142857143
+    },
+    {
+      "line": "L2",
+      "shift": "Evening",
+      "product_code": "P300",
+      "defects": 27,
+      "inspected_units": 1400,
+      "rate": 0.019285714285714285
+    },
+    {
+      "line": "L3",
+      "shift": "Night",
+      "product_code": "P200",
+      "defects": 25,
+      "inspected_units": 1400,
+      "rate": 0.017857142857142856
+    },
+    {
+      "line": "L1",
+      "shift": "Evening",
+      "product_code": "P200",
+      "defects": 24,
+      "inspected_units": 1400,
+      "rate": 0.017142857142857144
+    },
+    {
+      "line": "L2",
+      "shift": "Evening",
+      "product_code": "P200",
+      "defects": 24,
+      "inspected_units": 1400,
+      "rate": 0.017142857142857144
+    }
+  ],
+  "sensitivity_last_14_days": {
+    "excluding_night_rate": 0.014404761904761905,
+    "excluding_p300_rate": 0.014523809523809524
+  }
+}

@@ -7,11 +7,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from azure.containerapps.sandbox import SandboxVolume
 from azure.core.exceptions import ClientAuthenticationError, ServiceRequestError
 from conftest import TOKEN
 
 from aca_sandbox_harness import BootstrapError, ExecutionUncertain, HarnessError
-from aca_sandbox_harness.client import runtime_bundle
+from aca_sandbox_harness.client import SandboxHarness, runtime_bundle
 from aca_sandbox_harness.models import ROOT, Installation, workspace_path
 
 
@@ -21,6 +22,7 @@ def test_create_connect_run_and_explicit_delete(fake_stack) -> None:
     assert handle.sandbox_id == remote.sandbox_id
     assert group.created[0]["disk"] == "python-3.12"
     assert group.created[0]["auto_suspend_mode"] == "Disk"
+    assert group.created[0]["volumes"] is None
     assert TOKEN not in repr(group.created)
     first = handle.run("First instruction")
     second = client.connect(handle.sandbox_id).run("Follow-up")
@@ -70,6 +72,57 @@ def test_suspend_failure_does_not_delete_sandbox(fake_stack) -> None:
         handle.suspend()
 
     assert not remote.deleted
+
+
+def test_shared_volume_is_explicit_and_mounts_on_distinct_sandboxes(tmp_path, settings) -> None:
+    from conftest import FakeCredential, FakeGroup, FakeSandbox
+
+    first_remote = FakeSandbox(tmp_path / "first", "first-sandbox")
+    second_remote = FakeSandbox(tmp_path / "second", "second-sandbox")
+    group = FakeGroup(first_remote, [first_remote, second_remote])
+    client = SandboxHarness(settings, credential=FakeCredential(), group_client=group)
+    volume = client.create_volume("quality-demo", type="DataDisk", size="10Gi")
+    mount = SandboxVolume(volume_name=volume.name, mountpoint="/tmp/aca-harness/workspace")
+
+    first = client.create(volumes=[mount])
+    first.delete()
+    second = client.create(volumes=[mount])
+
+    assert first.sandbox_id != second.sandbox_id
+    assert [item["volumes"] for item in group.created] == [[mount], [mount]]
+    assert group.deleted_volumes == []
+    assert client.get_volume(volume.name).type == "DataDisk"
+
+    second.delete()
+    client.delete_volume(volume.name)
+    assert group.deleted_volumes == [volume.name]
+    assert volume.name not in group.volumes
+
+
+def test_shared_blob_volume_allows_suspended_sandboxes_to_reuse_data(
+    tmp_path,
+    settings,
+) -> None:
+    from conftest import FakeCredential, FakeGroup, FakeSandbox
+
+    first_remote = FakeSandbox(tmp_path / "first", "first-sandbox")
+    second_remote = FakeSandbox(tmp_path / "second", "second-sandbox")
+    group = FakeGroup(first_remote, [first_remote, second_remote])
+    client = SandboxHarness(settings, credential=FakeCredential(), group_client=group)
+    volume = client.create_volume("quality-demo-shared", type="AzureBlob")
+    mount = SandboxVolume(volume_name=volume.name, mountpoint="/tmp/aca-harness/workspace")
+
+    first = client.create(volumes=[mount])
+    first.suspend()
+    second = client.create(volumes=[mount])
+    second.suspend()
+
+    assert first.sandbox_id != second.sandbox_id
+    assert [item["volumes"] for item in group.created] == [[mount], [mount]]
+    assert first_remote.stopped and not first_remote.deleted
+    assert second_remote.stopped and not second_remote.deleted
+    assert client.get_volume(volume.name).type == "AzureBlob"
+    assert group.deleted_volumes == []
 
 
 @pytest.mark.parametrize(
@@ -213,6 +266,25 @@ def test_artifact_round_trip_and_no_overwrite(fake_stack, tmp_path: Path) -> Non
     with pytest.raises(FileExistsError):
         handle.download_file("inputs/source.bin", target)
     assert not list((remote.root / "transfers").rglob("payload"))
+
+
+def test_transfer_failure_identifies_sandbox_direction_and_path(
+    fake_stack, tmp_path: Path, monkeypatch
+) -> None:
+    from conftest import Output
+
+    client, remote, _, _ = fake_stack
+    handle = client.create()
+    monkeypatch.setattr(remote, "exec", lambda command: Output(exit_code=1))
+    path = "manufacturing-quality/exports/scenario_metadata.json"
+
+    with pytest.raises(HarnessError) as error:
+        handle.download_file(path, tmp_path / "metadata.json")
+
+    assert f"sandbox={handle.sandbox_id}" in str(error.value)
+    assert "direction=download" in str(error.value)
+    assert path in str(error.value)
+    assert not (tmp_path / "metadata.json").exists()
 
 
 @pytest.mark.parametrize("path", ["../secret", "/etc/passwd", "a/../b", "a\\b", ".", "a//b"])
